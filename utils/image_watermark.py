@@ -10,8 +10,8 @@ import io
 import os
 from typing import Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
-import aiohttp
 import asyncio
+import urllib.request
 
 from config import (
     WATERMARK_TEXT, WATERMARK_OPACITY,
@@ -45,17 +45,25 @@ def get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 # ─── Image Processing Functions ───────────────────────────────────────────────
 
-async def download_image(url: str) -> Optional[Image.Image]:
-    """Download image from URL asynchronously."""
+def _sync_download_image(url: str) -> Optional[Image.Image]:
+    """Download image from URL synchronously."""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status == 200:
-                    data = await response.read()
-                    return Image.open(io.BytesIO(data)).convert("RGBA")
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AppifyBot/2.0)"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = response.read()
+        return Image.open(io.BytesIO(data)).convert("RGBA")
     except Exception as e:
         print(f"[Image] Failed to download image from {url}: {e}")
     return None
+
+
+async def download_image(url: str) -> Optional[Image.Image]:
+    """Download image from URL asynchronously."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_download_image, url)
 
 
 def create_gradient_background(width: int, height: int) -> Image.Image:
@@ -277,7 +285,7 @@ async def process_product_image(
         BytesIO buffer with processed image, or None if failed
     """
     # Load image
-    if image_source.startswith("http://") or image_source.startswith("https://"):
+    if image_source and (image_source.startswith("http://") or image_source.startswith("https://")):
         img = await download_image(image_source)
     else:
         try:
